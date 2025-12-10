@@ -1,236 +1,117 @@
-from flask import Flask, request, redirect, url_for, render_template_string, session
-from werkzeug.security import generate_password_hash, check_password_hash
-import re
+import pygame
+import random
 
-app = Flask(__name__)
-app.secret_key = "supersecretkey"  # для сессий
+pygame.init()
 
-# "База данных" в памяти
-users = {}  # {phone: {"password": hash, "balance": int}}
+# окно
+WIDTH = 600
+HEIGHT = 400
+win = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Snake")
 
-# Нормализация номера: оставляем только цифры
-def normalize_phone(phone: str) -> str:
-    return re.sub(r"\D", "", (phone or "").strip())
+# цвета
+WHITE = (255, 255, 255)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+BLACK = (0, 0, 0)
 
-# Базовый layout с Bootstrap
-base_layout = """
-<!doctype html>
-<html lang="ru">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Бека Банк</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  </head>
-  <body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-      <div class="container">
-        <a class="navbar-brand" href="{{ url_for('home') }}">Бека Банк</a>
-        <div class="ms-auto">
-          {% if session.get('phone') %}
-            <span class="navbar-text me-3">Вы: {{ session.get('phone') }}</span>
-            <a class="btn btn-outline-light btn-sm" href="{{ url_for('logout') }}">Выйти</a>
-          {% else %}
-            <a class="btn btn-outline-light btn-sm me-2" href="{{ url_for('register') }}">Регистрация</a>
-            <a class="btn btn-light btn-sm" href="{{ url_for('login') }}">Вход</a>
-          {% endif %}
-        </div>
-      </div>
-    </nav>
-    <main class="container py-4">
-      <div class="row justify-content-center">
-        <div class="col-12 col-md-8 col-lg-6">
-          {{ content|safe }}
-        </div>
-      </div>
-    </main>
-  </body>
-</html>
-"""
+# параметры змейки
+snake_size = 15
+snake_speed = 10
 
-def page(content_html):
-    return render_template_string(base_layout, content=content_html)
+clock = pygame.time.Clock()
+font = pygame.font.SysFont("Arial", 25)
 
-# Страницы (формы)
-register_form = """
-<h2 class="mb-3">Регистрация</h2>
-<form method="post" class="card card-body">
-  <div class="mb-3">
-    <label class="form-label">Телефон</label>
-    <input type="text" class="form-control" name="phone" placeholder="87001234567" required>
-  </div>
-  <div class="mb-3">
-    <label class="form-label">Пароль</label>
-    <input type="password" class="form-control" name="password" required>
-  </div>
-  <button type="submit" class="btn btn-primary">Зарегистрироваться</button>
-</form>
-"""
+def draw_snake(snake_list):
+    for x in snake_list:
+        pygame.draw.rect(win, GREEN, [x[0], x[1], snake_size, snake_size])
 
-login_form = """
-<h2 class="mb-3">Вход</h2>
-<form method="post" class="card card-body">
-  <div class="mb-3">
-    <label class="form-label">Телефон</label>
-    <input type="text" class="form-control" name="phone" required>
-  </div>
-  <div class="mb-3">
-    <label class="form-label">Пароль</label>
-    <input type="password" class="form-control" name="password" required>
-  </div>
-  <button type="submit" class="btn btn-success">Войти</button>
-</form>
-"""
+def game_loop():
+    game_over = False
+    game_close = False
 
-@app.route("/")
-def home():
-    content = """
-    <div class="text-center">
-      <h1 class="mb-3">Добро пожаловать в Бека Банк!</h1>
-      <p class="mb-4">Регистрация, вход, баланс, пополнение и переводы.</p>
-      <div class="d-flex justify-content-center gap-2">
-        <a class="btn btn-primary" href="/register">Регистрация</a>
-        <a class="btn btn-success" href="/login">Вход</a>
-      </div>
-    </div>
-    """
-    return page(content)
+    x = WIDTH // 2
+    y = HEIGHT // 2
+    dx = 0
+    dy = 0
 
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        phone = normalize_phone(request.form.get("phone", ""))
-        password = (request.form.get("password") or "").strip()
+    snake_list = []
+    length = 1
 
-        if not phone or not password:
-            return page("<div class='alert alert-danger'>Ошибка: заполните телефон и пароль.</div>" + register_form)
+    food_x = round(random.randrange(0, WIDTH - snake_size) / snake_size) * snake_size
+    food_y = round(random.randrange(0, HEIGHT - snake_size) / snake_size) * snake_size
 
-        if phone in users:
-            return page("<div class='alert alert-warning'>Ошибка: такой номер уже зарегистрирован.</div>" + register_form)
-        
-        users[phone] = {
-            "password": generate_password_hash(password),
-            "balance": 1000
-        }
-        return redirect(url_for("login"))
-    return page(register_form)
+    while not game_over:
+        while game_close:
+            win.fill(BLACK)
+            msg = font.render("Игра окончена! Нажми C — продолжить или Q — выход", True, RED)
+            win.blit(msg, [20, HEIGHT//2 - 20])
+            pygame.display.update()
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        phone = normalize_phone(request.form.get("phone", ""))
-        password = (request.form.get("password") or "").strip()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    game_over = True
+                    game_close = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_q:
+                        game_over = True
+                        game_close = False
+                    if event.key == pygame.K_c:
+                        game_loop()
 
-        user = users.get(phone)
-        if user and check_password_hash(user["password"], password):
-            session["phone"] = phone
-            return redirect(url_for("dashboard"))
-        else:
-            return page("<div class='alert alert-danger'>Ошибка: неправильный номер или пароль.</div>" + login_form)
-    return page(login_form)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                game_over = True
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT:
+                    dx = -snake_size
+                    dy = 0
+                elif event.key == pygame.K_RIGHT:
+                    dx = snake_size
+                    dy = 0
+                elif event.key == pygame.K_UP:
+                    dy = -snake_size
+                    dx = 0
+                elif event.key == pygame.K_DOWN:
+                    dy = snake_size
+                    dx = 0
 
-@app.route("/dashboard")
-def dashboard():
-    phone = session.get("phone")
-    if not phone:
-        return redirect(url_for("login"))
-    balance = users[phone]["balance"]
-    content = f"""
-    <div class="card">
-      <div class="card-body">
-        <h2 class="card-title">Личный кабинет</h2>
-        <p class="card-text mb-1"><strong>Телефон:</strong> {phone}</p>
-        <p class="card-text"><strong>Баланс:</strong> {balance} ₸</p>
-        <div class="d-flex gap-2">
-          <a class="btn btn-primary" href="{url_for('deposit')}">Пополнить баланс</a>
-          <a class="btn btn-warning" href="{url_for('transfer')}">Перевести средства</a>
-          <a class="btn btn-outline-secondary" href="{url_for('logout')}">Выйти</a>
-        </div>
-      </div>
-    </div>
-    """
-    return page(content)
+        x += dx
+        y += dy
 
-@app.route("/deposit", methods=["GET", "POST"])
-def deposit():
-    phone = session.get("phone")
-    if not phone:
-        return redirect(url_for("login"))
-    if request.method == "POST":
-        amount_raw = (request.form.get("amount") or "").strip()
-        if not amount_raw.isdigit():
-            return page("<div class='alert alert-danger'>Ошибка: введите целое число.</div>" + deposit_form())
-        amount = int(amount_raw)
-        if amount <= 0:
-            return page("<div class='alert alert-warning'>Ошибка: сумма должна быть больше нуля.</div>" + deposit_form())
-        users[phone]["balance"] += amount
-        return redirect(url_for("dashboard"))
-    return page(deposit_form())
+        # выход за границы
+        if x >= WIDTH or x < 0 or y >= HEIGHT or y < 0:
+            game_close = True
 
-def deposit_form():
-    return """
-    <h2 class="mb-3">Пополнение баланса</h2>
-    <form method="post" class="card card-body">
-      <div class="mb-3">
-        <label class="form-label">Сумма</label>
-        <input type="number" class="form-control" name="amount" min="1" step="1" required>
-      </div>
-      <button type="submit" class="btn btn-primary">Пополнить</button>
-      <a class="btn btn-link" href="/dashboard">Назад</a>
-    </form>
-    """
+        win.fill(BLACK)
+        pygame.draw.rect(win, RED, [food_x, food_y, snake_size, snake_size])
 
-@app.route("/transfer", methods=["GET", "POST"])
-def transfer():
-    phone = session.get("phone")
-    if not phone:
-        return redirect(url_for("login"))
-    if request.method == "POST":
-        to_phone = normalize_phone(request.form.get("to_phone", ""))
-        amount_raw = (request.form.get("amount") or "").strip()
+        snake_head = []
+        snake_head.append(x)
+        snake_head.append(y)
+        snake_list.append(snake_head)
 
-        if not to_phone:
-            return page("<div class='alert alert-danger'>Ошибка: укажите номер получателя.</div>" + transfer_form())
-        if to_phone == phone:
-            return page("<div class='alert alert-warning'>Ошибка: нельзя переводить самому себе.</div>" + transfer_form())
-        if not amount_raw.isdigit():
-            return page("<div class='alert alert-danger'>Ошибка: введите целое число.</div>" + transfer_form())
-        amount = int(amount_raw)
-        if amount <= 0:
-            return page("<div class='alert alert-warning'>Ошибка: сумма должна быть больше нуля.</div>" + transfer_form())
+        if len(snake_list) > length:
+            del snake_list[0]
 
-        if to_phone not in users:
-            return page(f"<div class='alert alert-danger'>Ошибка: номер получателя не найден ({to_phone}).</div>" + transfer_form())
-        if users[phone]["balance"] < amount:
-            return page("<div class='alert alert-danger'>Ошибка: недостаточно средств.</div>" + transfer_form())
+        # столкновение с собой
+        for part in snake_list[:-1]:
+            if part == snake_head:
+                game_close = True
 
-        users[phone]["balance"] -= amount
-        users[to_phone]["balance"] += amount
-        return redirect(url_for("dashboard"))
-    return page(transfer_form())
+        draw_snake(snake_list)
 
-def transfer_form():
-    return """
-    <h2 class="mb-3">Перевод средств</h2>
-    <form method="post" class="card card-body">
-      <div class="mb-3">
-        <label class="form-label">Номер получателя</label>
-        <input type="text" class="form-control" name="to_phone" placeholder="8700..." required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Сумма</label>
-        <input type="number" class="form-control" name="amount" min="1" step="1" required>
-      </div>
-      <button type="submit" class="btn btn-warning">Перевести</button>
-      <a class="btn btn-link" href="/dashboard">Назад</a>
-    </form>
-    """
+        pygame.display.update()
 
-@app.route("/logout")
-def logout():
-    session.pop("phone", None)
-    return redirect(url_for("home"))
+        # еда
+        if x == food_x and y == food_y:
+            food_x = round(random.randrange(0, WIDTH - snake_size) / snake_size) * snake_size
+            food_y = round(random.randrange(0, HEIGHT - snake_size) / snake_size) * snake_size
+            length += 1
 
-if __name__ == "__main__":
-    app.run(debug=True)
-print ("app.py loaded successfully.")
+        clock.tick(snake_speed)
+
+    pygame.quit()
+    quit()
+
+game_loop()
